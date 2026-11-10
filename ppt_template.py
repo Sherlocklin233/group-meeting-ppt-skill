@@ -44,7 +44,7 @@ FONT_CODE     = "Consolas"
 
 
 # ============================================================
-# 初始化演示文稿
+# 初始化演示文稿（基于模板）
 # ============================================================
 import os
 
@@ -52,9 +52,7 @@ TEMPLATE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                               "模板.pptx")
 
 def create_presentation(template_path=None):
-    """传入路径时打开模板，否则新建空白演示文稿。模板原有页面和备注会保留。"""
-    if template_path is not None:
-        return Presentation(template_path)
+    """创建演示文稿。装饰与模板.pptx一致，由 add_page_decorations 手动添加。"""
     prs = Presentation()
     prs.slide_width = Inches(13.333)
     prs.slide_height = Inches(7.5)
@@ -62,10 +60,7 @@ def create_presentation(template_path=None):
 
 
 def clone_slide(prs, source_slide):
-    """复制无外部关系的形状。含图片、图表、超链接或 OLE 的页面不可用。"""
-    if any(not rel.reltype.endswith("/slideLayout")
-           for rel in source_slide.part.rels.values()):
-        raise ValueError("无法安全复制带关系的页面，请使用支持完整页面复制的工具")
+    """深复制一页（含所有形状和装饰），返回新页"""
     slide_layout = source_slide.slide_layout
     new_slide = prs.slides.add_slide(slide_layout)
     for shape in list(new_slide.shapes):
@@ -75,22 +70,6 @@ def clone_slide(prs, source_slide):
         new_el = copy.deepcopy(shape._element)
         new_slide.shapes._spTree.append(new_el)
     return new_slide
-
-
-def add_picture_contained(slide, path, left, top, width, height):
-    """按原图比例居中放入指定区域，不裁剪或拉伸。"""
-    from pptx.parts.image import Image
-    image_width, image_height = Image.from_file(path).size
-    scale = min(width / image_width, height / image_height)
-    placed_width = int(image_width * scale)
-    placed_height = int(image_height * scale)
-    return slide.shapes.add_picture(
-        path,
-        int(left + (width - placed_width) / 2),
-        int(top + (height - placed_height) / 2),
-        width=placed_width,
-        height=placed_height,
-    )
 
 
 def _clear_slides(prs):
@@ -105,7 +84,7 @@ def _clear_slides(prs):
 # 页面装饰：顶部蓝色条 + 水印
 # ============================================================
 def add_page_decorations(slide):
-    """给空白页添加近似模板的装饰，不复制模板母版或资源。"""
+    """给每页加上与模板.pptx一致的装饰层"""
     # 1. 顶部蓝色窄条（#0E419C）
     top_strip = slide.shapes.add_shape(
         MSO_SHAPE.RECTANGLE,
@@ -855,8 +834,7 @@ def add_module_overview_page(prs, module_label, module_title,
 
     # 框架图回指（如果有）
     if framework_image:
-        add_picture_contained(
-            slide,
+        slide.shapes.add_picture(
             framework_image,
             Inches(2.5), Inches(1.4),
             Inches(8.4), Inches(3.7)
@@ -913,8 +891,7 @@ def add_subsection_page(prs, section_number, title, body_text="",
     add_title_bar(slide, f"{section_number} {title}")
 
     if image_path:
-        add_picture_contained(
-            slide,
+        slide.shapes.add_picture(
             image_path,
             Inches(0.8), Inches(1.5),
             Inches(8.4), Inches(3.7)
@@ -967,8 +944,7 @@ def add_image_content_page(prs, title, image_path, caption="",
 
     # 居中图片
     img_left = (13.333 - img_width / 914400) / 2
-    add_picture_contained(
-        slide,
+    slide.shapes.add_picture(
         image_path,
         Inches(img_left), Inches(1.5),
         img_width, img_height
@@ -1143,8 +1119,7 @@ def add_paper_comparison_page(prs, title, left_paper, right_paper, notes_text=""
 
         # 缩略图
         if paper.get('image_path'):
-            add_picture_contained(
-                slide,
+            slide.shapes.add_picture(
                 paper['image_path'],
                 Inches(x_offset + 0.5), Inches(4.0),
                 Inches(4.7), Inches(2.0)
@@ -1180,7 +1155,7 @@ def demo():
             "来改进从事件日志中生成的预测模型。"
         ),
         notes_text=(
-            "本文发表于 ACM Transactions on Intelligent Systems and Technology。"
+            "本文发表于期刊 Information Systems。"
             "论文围绕业务流程管理中的后缀预测问题，"
             "将有限迹线性时序逻辑与深度自回归模型结合。"
         )
@@ -1324,17 +1299,17 @@ def demo():
         prs,
         title="3.3 融合公式里的每个符号是什么",
         formula_lines=[
-            "score' = score × NN^(1−w) × C^w",
-            "score'(b) = 1 × 0.30^0.5 × 0.70^0.5 = 0.458",
-            "score'(c) = 1 × 0.55^0.5 × 0.20^0.5 = 0.332",
+            "π'(a|σ) ∝ π(a|σ)^w × C(a|σ)^(1−w)",
+            "π'(b|⟨a⟩) = 0.30^0.5 × 0.70^0.5 = 0.458",
+            "π'(c|⟨a⟩) = 0.55^0.5 × 0.20^0.5 = 0.332",
         ],
         symbol_table=[
-            ("NN", "神经网络给的原始概率"),
+            ("π(a|σ)", "神经网络给的原始概率"),
             ("C(a|σ)", "合规度（知识给的分数）"),
-            ("w", "知识权重，越大越听知识"),
-            ("score'", "融合后的分数，非归一化概率"),
+            ("w", "权重，越大越听神经网络"),
+            ("π'(a|σ)", "融合后的新概率"),
         ],
-        notes_text="教学示意：w = 0.5 时取几何平均，结果为分数而非归一化概率。"
+        notes_text="w = 0.5 时两边各占一半，取几何平均。"
     )
 
     # 13. 串联对比页
